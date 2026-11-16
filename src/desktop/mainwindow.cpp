@@ -7593,7 +7593,9 @@ void MainWindow::setupActions()
 	viewmenu->addAction(toolbartoggles);
 	viewmenu->addAction(docktoggles);
 	m_desktopModeActions->addAction(docktoggles);
-	viewmenu->addAction(toggleChat);
+	// InkForge: chat is only used in collaborative sessions, so it is not shown in the View menu.
+	toggleChat->setVisible(false);
+	toggleChat->setEnabled(false);
 	m_desktopModeActions->addAction(toggleChat);
 	viewmenu->addAction(smallScreenSideToolbar);
 	m_smallScreenModeActions->addAction(smallScreenSideToolbar);
@@ -8492,7 +8494,7 @@ void MainWindow::setupActions()
 	m_admintools->setEnabled(false);
 
 	connect(host, &QAction::triggered, this, &MainWindow::host);
-	connect(this, &MainWindow::hostSessionEnabled, host, &QAction::setEnabled);
+	// InkForge: hosting is permanently disabled, so hostSessionEnabled is not connected.
 	connect(invite, &QAction::triggered, this, &MainWindow::invite);
 	connect(join, &QAction::triggered, this, &MainWindow::join);
 	connect(browse, &QAction::triggered, this, &MainWindow::browse);
@@ -8535,6 +8537,14 @@ void MainWindow::setupActions()
 	sessionmenu->addAction(sessionSettings);
 	sessionmenu->addAction(sessionUndoDepthLimit);
 	sessionmenu->addAction(locksession);
+
+	// InkForge: collaborative sessions are removed. Hide the Session menu and
+	// disable every action that starts or joins a network session.
+	sessionmenu->menuAction()->setVisible(false);
+	for(QAction *networkAction : {host, invite, join, browse, logout}) {
+		networkAction->setVisible(false);
+		networkAction->setEnabled(false);
+	}
 
 	m_chatbox->setActions(invite, sessionSettings);
 
