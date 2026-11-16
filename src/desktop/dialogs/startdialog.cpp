@@ -327,6 +327,13 @@ StartDialog::StartDialog(bool smallScreenMode, QWidget *parent)
 
 		menuLayout->addWidget(button);
 		group->addButton(button);
+
+		// InkForge: collaborative sessions are removed, so the Join, Browse
+		// and Host pages are not offered.
+		if(i == Entry::Join || i == Entry::Browse || i == Entry::Host) {
+			button->setEnabled(false);
+			button->setVisible(false);
+		}
 	}
 
 	m_linksSeparator = new QFrame;
@@ -910,7 +917,8 @@ void StartDialog::guessPage()
 			lastDateTime.isValid() &&
 			lastDateTime.secsTo(QDateTime::currentDateTimeUtc()) <
 				MAX_LAST_PAGE_REMEMBER_SECS &&
-			m_buttons[lastPage]->isCheckable();
+			m_buttons[lastPage]->isCheckable() &&
+			m_buttons[lastPage]->isEnabled();
 		showPage(lastPageValid ? Entry(lastPage) : Entry::Welcome);
 	} else {
 		showPage(Entry::Welcome);
