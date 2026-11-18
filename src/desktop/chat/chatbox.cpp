@@ -1,250 +1,76 @@
+
 // SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "desktop/chat/chatbox.h"
-#include "desktop/chat/chatwidget.h"
-#include "desktop/chat/chatwindow.h"
-#include "desktop/chat/useritemdelegate.h"
-#include "desktop/utils/widgetutils.h"
-#include "desktop/widgets/groupedtoolbutton.h"
-#include "libclient/canvas/canvasmodel.h"
-#include "libclient/canvas/userlist.h"
-#include "libclient/document.h"
-#include "libclient/net/client.h"
-#include <QAction>
-#include <QListView>
-#include <QMetaObject>
-#include <QPushButton>
+
 #include <QResizeEvent>
-#include <QSplitter>
-#include <QVBoxLayout>
-#include <functional>
 
 namespace widgets {
 
 ChatBox::ChatBox(Document *doc, bool smallScreenMode, QWidget *parent)
-	: QWidget(parent)
+    : QWidget(parent)
 {
-	QSplitter *chatsplitter = new QSplitter(Qt::Horizontal, this);
-	chatsplitter->setChildrenCollapsible(false);
-	m_chatWidget = new ChatWidget(smallScreenMode, this);
-	chatsplitter->addWidget(m_chatWidget);
+    Q_UNUSED(doc);
+    Q_UNUSED(smallScreenMode);
 
-	QWidget *sidebar = new QWidget{this};
-	QVBoxLayout *sidebarLayout = new QVBoxLayout;
-	sidebarLayout->setContentsMargins(0, 0, 0, 0);
-	sidebarLayout->setSpacing(0);
-	sidebar->setLayout(sidebarLayout);
+    m_chatWidget = nullptr;
+    m_userItemDelegate = nullptr;
+    m_inviteButton = nullptr;
+    m_sessionSettingsButton = nullptr;
+    m_chatMenuButton = nullptr;
+    m_userList = nullptr;
 
-	QHBoxLayout *buttonsLayout = new QHBoxLayout;
-	buttonsLayout->setContentsMargins(0, 0, 0, 0);
-	buttonsLayout->setSpacing(0);
-	sidebarLayout->addLayout(buttonsLayout);
-
-	buttonsLayout->addStretch();
-
-	m_inviteButton = new GroupedToolButton{GroupedToolButton::GroupLeft, this};
-	m_inviteButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	m_inviteButton->setText(tr("Invite"));
-	buttonsLayout->addWidget(m_inviteButton);
-
-	m_sessionSettingsButton =
-		new GroupedToolButton{GroupedToolButton::GroupCenter, this};
-	m_sessionSettingsButton->setIcon(QIcon::fromTheme("configure"));
-	m_sessionSettingsButton->setText(tr("Session"));
-	buttonsLayout->addWidget(m_sessionSettingsButton);
-
-	m_chatMenuButton =
-		new GroupedToolButton{GroupedToolButton::GroupRight, this};
-	m_chatMenuButton->setIcon(QIcon::fromTheme("edit-comment"));
-	m_chatMenuButton->setText(tr("Chat"));
-	m_chatMenuButton->setStatusTip(tr("Show chat options"));
-	m_chatMenuButton->setToolTip(m_chatMenuButton->statusTip());
-	m_chatMenuButton->setPopupMode(QToolButton::InstantPopup);
-	m_chatMenuButton->setMenu(m_chatWidget->externalMenu());
-	buttonsLayout->addWidget(m_chatMenuButton);
-
-	buttonsLayout->addStretch();
-
-	m_userList = new QListView(this);
-	m_userList->setSelectionMode(QListView::NoSelection);
-	m_userItemDelegate = new UserItemDelegate(this);
-	m_userItemDelegate->setDocument(doc);
-	m_userList->setItemDelegate(m_userItemDelegate);
-	utils::bindKineticScrolling(m_userList);
-	sidebarLayout->addWidget(m_userList);
-
-	chatsplitter->addWidget(sidebar);
-
-	chatsplitter->setStretchFactor(0, 5);
-	chatsplitter->setStretchFactor(1, 1);
-
-	auto *layout = new QVBoxLayout;
-	layout->addWidget(chatsplitter);
-	layout->setContentsMargins(0, 0, 0, 0);
-	setLayout(layout);
-
-	connect(m_chatWidget, &ChatWidget::message, this, &ChatBox::message);
-	connect(
-		m_chatWidget, &ChatWidget::detachRegularRequested, this,
-		std::bind(&ChatBox::detachFromParent, this, DETACH_REGULAR));
-	connect(
-		m_chatWidget, &ChatWidget::detachOnTopRequested, this,
-		std::bind(&ChatBox::detachFromParent, this, DETACH_ON_TOP));
-	connect(
-		m_chatWidget, &ChatWidget::detachAlwaysOnTopRequested, this,
-		std::bind(&ChatBox::detachFromParent, this, DETACH_ALWAYS_ON_TOP));
-	connect(m_chatWidget, &ChatWidget::expandRequested, this, [this]() {
-		if(isCollapsed()) {
-			emit expandPlease();
-		}
-	});
-	connect(
-		m_chatWidget, &ChatWidget::muteChanged, this, &ChatBox::muteChanged);
-
-	connect(doc, &Document::canvasChanged, this, &ChatBox::onCanvasChanged);
-	connect(doc, &Document::serverLoggedIn, this, &ChatBox::onServerLogin);
-
-	connect(
-		doc, &Document::sessionPreserveChatChanged, m_chatWidget,
-		&ChatWidget::setPreserveMode);
-	connect(
-		doc->client(), &net::Client::serverMessage, m_chatWidget,
-		&ChatWidget::receiveSystemMessage);
-
-	connect(
-		m_userItemDelegate, &widgets::UserItemDelegate::opCommand,
-		doc->client(), &net::Client::sendMessage);
-	connect(
-		m_userItemDelegate, &widgets::UserItemDelegate::requestPrivateChat,
-		m_chatWidget, &ChatWidget::openPrivateChat);
-	connect(
-		m_userItemDelegate, &widgets::UserItemDelegate::requestUserInfo, this,
-		&ChatBox::requestUserInfo);
-	connect(
-		m_userItemDelegate, &widgets::UserItemDelegate::requestCurrentBrush,
-		this, &ChatBox::requestCurrentBrush);
+    hide();
 }
 
 void ChatBox::setActions(QAction *inviteAction, QAction *sessionSettingsAction)
 {
-	const QPair<QAction *, QAbstractButton *> pairs[] = {
-		{inviteAction, m_inviteButton},
-		{sessionSettingsAction, m_sessionSettingsButton},
-	};
-	for(const QPair<QAction *, QAbstractButton *> &pair : pairs) {
-		QAction *action = pair.first;
-		QAbstractButton *button = pair.second;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-		connect(action, &QAction::enabledChanged, button, &QWidget::setEnabled);
-#else
-		connect(action, &QAction::changed, this, [=] {
-			button->setEnabled(action->isEnabled());
-		});
-#endif
-		connect(button, &QAbstractButton::clicked, action, &QAction::trigger);
-		button->setIcon(action->icon());
-		button->setStatusTip(action->statusTip());
-		button->setToolTip(action->statusTip());
-		button->setEnabled(action->isEnabled());
-	}
+    Q_UNUSED(inviteAction);
+    Q_UNUSED(sessionSettingsAction);
 }
 
 void ChatBox::setSmallScreenMode(bool smallScreenMode)
 {
-	m_chatWidget->setSmallScreenMode(smallScreenMode);
-	if(smallScreenMode && m_state == State::Detached) {
-		ChatWindow *window = qobject_cast<ChatWindow *>(parent());
-		if(window) {
-			window->close();
-		}
-	}
-}
-
-void ChatBox::onCanvasChanged(canvas::CanvasModel *canvas)
-{
-	m_userList->setModel(canvas->userlist()->onlineUsers());
-	m_chatWidget->setModel(canvas);
-
-	connect(
-		canvas, &canvas::CanvasModel::chatMessageReceived, m_chatWidget,
-		&ChatWidget::receiveMessage);
-	connect(
-		canvas, &canvas::CanvasModel::pinnedMessageChanged, m_chatWidget,
-		&ChatWidget::setPinnedMessage);
-	connect(
-		canvas, &canvas::CanvasModel::userJoined, m_chatWidget,
-		&ChatWidget::userJoined);
-	connect(
-		canvas, &canvas::CanvasModel::userLeft, m_chatWidget,
-		&ChatWidget::userParted);
-}
-
-void ChatBox::onServerLogin()
-{
-	m_chatWidget->loggedIn(static_cast<Document *>(sender())->client()->myId());
+    Q_UNUSED(smallScreenMode);
+    hide();
 }
 
 void ChatBox::focusInput()
 {
-	m_chatWidget->focusInput();
 }
 
 void ChatBox::receiveSystemMessage(const QString &message, int type)
 {
-	m_chatWidget->receiveSystemMessage(message, type);
+    Q_UNUSED(message);
+    Q_UNUSED(type);
 }
 
 void ChatBox::setCurrentLayer(int layerId)
 {
-	m_chatWidget->setCurrentLayer(layerId);
+    Q_UNUSED(layerId);
+}
+
+void ChatBox::onCanvasChanged(canvas::CanvasModel *canvas)
+{
+    Q_UNUSED(canvas);
+}
+
+void ChatBox::onServerLogin()
+{
 }
 
 void ChatBox::detachFromParent(int mode)
 {
-	QWidget *oldParent = parentWidget();
-	if(!oldParent || qobject_cast<ChatWindow *>(oldParent)) {
-		return;
-	}
-
-	m_state = State::Detached;
-
-	QSize siz = size();
-
-	m_chatWidget->setAttached(false);
-
-	Qt::WindowFlags windowFlags = Qt::Window;
-	if(mode == DETACH_ALWAYS_ON_TOP) {
-		windowFlags.setFlag(Qt::WindowStaysOnTopHint);
-	}
-
-	QWidget *windowParent = mode == DETACH_ON_TOP ? oldParent : nullptr;
-	ChatWindow *window = new ChatWindow(this, windowFlags, windowParent);
-	connect(window, &ChatWindow::closing, this, &ChatBox::reattachToParent);
-	connect(oldParent, &QObject::destroyed, window, &QObject::deleteLater);
-
-	window->show();
-	window->resize(siz);
+    Q_UNUSED(mode);
 }
 
 void ChatBox::reattachToParent()
 {
-	emit reattachNowPlease();
-	m_state = State::Expanded;
-	m_chatWidget->setAttached(true);
 }
 
 void ChatBox::resizeEvent(QResizeEvent *event)
 {
-	QWidget::resizeEvent(event);
-	if(event->size().height() == 0) {
-		if(m_state == State::Expanded) {
-			emit expandedChanged(false);
-			m_state = State::Collapsed;
-		}
-
-	} else if(m_state == State::Collapsed) {
-		m_state = State::Expanded;
-		emit expandedChanged(true);
-	}
+    QWidget::resizeEvent(event);
 }
 
 }
